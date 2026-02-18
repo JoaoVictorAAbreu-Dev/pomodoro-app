@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1a0a00">
+  <meta name="description" content="Pomodoro Timer - Foco total, um tomate de cada vez.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Pomodoro</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f0700;
+      --surface: #1c0e00;
+      --border: #3a1f00;
+      --tomato: #ff4500;
+      --amber: #ffb347;
+      --cream: #ffe8c8;
+      --muted: #7a5030;
+      --break: #00c9a7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--cream);
+      font-family: "DM Mono", monospace;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+      padding: 1rem;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      opacity: 0.6;
+      z-index: 0;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(255, 69, 0, 0.12), transparent 65%);
+      pointer-events: none;
+      transition: background 0.5s ease;
+      z-index: 0;
+    }
+
+    body.break-mode::after {
+      background: radial-gradient(circle at 50% 50%, rgba(0, 201, 167, 0.12), transparent 65%);
+    }
+
+    .app {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.6rem;
+      z-index: 1;
+    }
+
+    .header {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .logo {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: clamp(2.4rem, 8vw, 3.8rem);
+      letter-spacing: 0.15em;
+      color: var(--tomato);
+      text-shadow: 0 0 36px rgba(255, 69, 0, 0.4);
+      transition: color 0.5s ease, text-shadow 0.5s ease;
+    }
+
+    body.break-mode .logo {
+      color: var(--break);
+      text-shadow: 0 0 36px rgba(0, 201, 167, 0.4);
+    }
+
+    .mode-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .tab {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 0.64rem;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+      padding: 0.72rem 0.4rem;
+      cursor: pointer;
+      transition: color 0.2s ease, background 0.2s ease;
+    }
+
+    .tab.active {
+      color: var(--cream);
+      background: rgba(255, 69, 0, 0.1);
+    }
+
+    body.break-mode .tab.active {
+      background: rgba(0, 201, 167, 0.1);
+    }
+
+    .timer-wrapper {
+      width: min(78vw, 290px);
+      aspect-ratio: 1 / 1;
+      position: relative;
+      margin: 0 auto;
+    }
+
+    .timer-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring-bg { fill: none; stroke: var(--surface); stroke-width: 6; }
+    .ring-progress {
+      fill: none;
+      stroke: var(--tomato);
+      stroke-width: 6;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 1s linear, stroke 0.5s ease;
+      filter: drop-shadow(0 0 8px rgba(255, 69, 0, 0.6));
+    }
+    body.break-mode .ring-progress {
+      stroke: var(--break);
+      filter: drop-shadow(0 0 8px rgba(0, 201, 167, 0.6));
+    }
+
+    .timer-center {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      align-content: center;
+    }
+
+    .timer-display {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: clamp(4.2rem, 15vw, 5.8rem);
+      line-height: 1;
+      letter-spacing: 0.05em;
+    }
+
+    .session-count {
+      margin-top: 0.25rem;
+      font-size: 0.64rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 0.8rem;
+    }
+
+    button { font-family: inherit; }
+
+    .btn-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .btn-main {
+      height: 56px;
+      border: 0;
+      border-radius: 6px;
+      font-family: "Bebas Neue", sans-serif;
+      font-size: 1.36rem;
+      letter-spacing: 0.2em;
+      color: #fff;
+      background: var(--tomato);
+      box-shadow: 0 6px 26px rgba(255, 69, 0, 0.38);
+      cursor: pointer;
+    }
+
+    body.break-mode .btn-main {
+      background: var(--break);
+      box-shadow: 0 6px 26px rgba(0, 201, 167, 0.38);
+    }
+
+    .settings {
+      max-height: 0;
+      overflow: hidden;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      transition: max-height 0.35s ease;
+    }
+
+    .settings.open { max-height: 360px; }
+
+    .settings-inner {
+      padding: 1rem;
+      display: grid;
+      gap: 0.8rem;
+    }
+
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .setting-label {
+      font-size: 0.64rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .setting-control { display: flex; align-items: center; gap: 0.4rem; }
+    .setting-control button {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--cream);
+      cursor: pointer;
+    }
+
+    .setting-value {
+      min-width: 2.4rem;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+
+    .install-row {
+      display: none;
+      gap: 0.6rem;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .install-row.visible { display: flex; }
+
+    .btn-install {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--amber);
+      font-size: 0.7rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 0.6rem 0.95rem;
+      cursor: pointer;
+    }
+
+    .footer {
+      text-align: center;
+      font-size: 0.58rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .notif-badge {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      padding: 0.6rem 0.85rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--amber);
+      font-size: 0.62rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .notif-badge.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.65; }
+    }
+
+    .running .timer-display { animation: pulse 2s ease-in-out infinite; }
+  </style>
+</head>
+<body>
+  <div class="notif-badge" id="notifBadge" role="status" aria-live="polite"></div>
+  <main class="app">
+    <header class="header">
+      <h1 class="logo">Pomodoro</h1>
+      <p class="mode-label" id="modeLabel">Foco total</p>
+    </header>
+
+    <section class="tabs" aria-label="Modos">
+      <button class="tab active" data-mode="pomodoro" type="button">Pomodoro</button>
+      <button class="tab" data-mode="short" type="button">Pausa curta</button>
+      <button class="tab" data-mode="long" type="button">Pausa longa</button>
+    </section>
+
+    <section class="timer-wrapper" id="timerWrapper" aria-live="off">
+      <svg class="timer-svg" viewBox="0 0 260 260" aria-hidden="true">
+        <circle class="ring-bg" cx="130" cy="130" r="120"></circle>
+        <circle class="ring-progress" id="ringProgress" cx="130" cy="130" r="120"></circle>
+      </svg>
+      <div class="timer-center">
+        <p class="timer-display" id="timerDisplay">25:00</p>
+        <p class="session-count" id="sessionCount">Sessao 1</p>
+      </div>
+    </section>
+
+    <section class="controls">
+      <button class="btn-icon" id="resetBtn" type="button" aria-label="Reiniciar timer">↺</button>
+      <button class="btn-main" id="mainBtn" type="button" aria-label="Iniciar ou pausar">INICIAR</button>
+      <button class="btn-icon" id="settingsBtn" type="button" aria-label="Abrir configuracoes">⚙</button>
+    </section>
+
+    <section class="settings" id="settingsPanel" aria-label="Configuracoes">
+      <div class="settings-inner">
+        <div class="setting-row">
+          <span class="setting-label">Pomodoro (min)</span>
+          <div class="setting-control">
+            <button type="button" data-setting="pomodoro" data-delta="-5">-</button>
+            <span class="setting-value" id="val-pomodoro">25</span>
+            <button type="button" data-setting="pomodoro" data-delta="5">+</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">Pausa curta (min)</span>
+          <div class="setting-control">
+            <button type="button" data-setting="short" data-delta="-1">-</button>
+            <span class="setting-value" id="val-short">5</span>
+            <button type="button" data-setting="short" data-delta="1">+</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">Pausa longa (min)</span>
+          <div class="setting-control">
+            <button type="button" data-setting="long" data-delta="-5">-</button>
+            <span class="setting-value" id="val-long">15</span>
+            <button type="button" data-setting="long" data-delta="5">+</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">Som</span>
+          <div class="setting-control">
+            <button id="soundToggle" type="button" aria-label="Ativar ou desativar som">Ligado</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="install-row" id="installRow">
+      <button class="btn-install" id="installBtn" type="button">Instalar App</button>
+    </section>
+
+    <footer class="footer">Atalhos: Espaco inicia/pausa - R reinicia</footer>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "pomodoro_state_v2";
+    const MODES = {
+      pomodoro: { label: "Foco total", min: 5, max: 60, default: 25 },
+      short: { label: "Pausa curta", min: 1, max: 15, default: 5 },
+      long: { label: "Pausa longa", min: 5, max: 60, default: 15 }
+    };
+
+    let state = {
+      settings: { pomodoro: 25, short: 5, long: 15 },
+      mode: "pomodoro",
+      session: 1,
+      remaining: 25 * 60,
+      totalSecs: 25 * 60,
+      running: false,
+      soundOn: true,
+      expectedEndTs: null
+    };
+
+    let interval = null;
+    let audioCtx = null;
+    let deferredInstallPrompt = null;
+
+    const display = document.getElementById("timerDisplay");
+    const ring = document.getElementById("ringProgress");
+    const mainBtn = document.getElementById("mainBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const settingsBtn = document.getElementById("settingsBtn");
+    const settingsPanel = document.getElementById("settingsPanel");
+    const modeLabel = document.getElementById("modeLabel");
+    const sessionCount = document.getElementById("sessionCount");
+    const timerWrapper = document.getElementById("timerWrapper");
+    const notifBadge = document.getElementById("notifBadge");
+    const soundToggle = document.getElementById("soundToggle");
+    const installRow = document.getElementById("installRow");
+    const installBtn = document.getElementById("installBtn");
+
+    const CIRCUMFERENCE = 2 * Math.PI * 120;
+    ring.style.strokeDasharray = String(CIRCUMFERENCE);
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (_) {}
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        state = {
+          ...state,
+          ...parsed,
+          settings: { ...state.settings, ...(parsed.settings || {}) }
+        };
+      } catch (_) {}
+    }
+
+    function syncElapsedFromClock() {
+      if (!state.running || !state.expectedEndTs) return;
+      const remainingMs = state.expectedEndTs - Date.now();
+      state.remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+      if (state.remaining <= 0) {
+        state.running = false;
+        state.expectedEndTs = null;
+        onComplete();
+      }
+    }
+
+    function render() {
+      const m = String(Math.floor(state.remaining / 60)).padStart(2, "0");
+      const s = String(state.remaining % 60).padStart(2, "0");
+      display.textContent = m + ":" + s;
+      document.title = m + ":" + s + " | Pomodoro";
+
+      const pct = state.totalSecs > 0 ? state.remaining / state.totalSecs : 0;
+      ring.style.strokeDashoffset = String(CIRCUMFERENCE * (1 - pct));
+
+      mainBtn.textContent = state.running ? "PAUSAR" : "INICIAR";
+      sessionCount.textContent = "Sessao " + state.session;
+      modeLabel.textContent = MODES[state.mode].label;
+      soundToggle.textContent = state.soundOn ? "Ligado" : "Mudo";
+
+      document.body.classList.toggle("break-mode", state.mode !== "pomodoro");
+      timerWrapper.classList.toggle("running", state.running);
+
+      for (const key of Object.keys(MODES)) {
+        const out = document.getElementById("val-" + key);
+        if (out) out.textContent = String(state.settings[key]);
+      }
+    }
+
+    function setMode(newMode, shouldReset = true) {
+      state.mode = newMode;
+      document.querySelectorAll(".tab").forEach(tab => {
+        tab.classList.toggle("active", tab.dataset.mode === newMode);
+      });
+      if (shouldReset) resetTimer();
+      saveState();
+      render();
+    }
+
+    function startInterval() {
+      clearInterval(interval);
+      interval = setInterval(() => {
+        syncElapsedFromClock();
+        if (!state.running) {
+          clearInterval(interval);
+          render();
+          saveState();
+          return;
+        }
+        render();
+        saveState();
+      }, 1000);
+    }
+
+    function toggleTimer() {
+      if (state.running) {
+        state.running = false;
+        state.expectedEndTs = null;
+        clearInterval(interval);
+      } else {
+        state.running = true;
+        state.expectedEndTs = Date.now() + state.remaining * 1000;
+        startInterval();
+      }
+      saveState();
+      render();
+    }
+
+    function resetTimer() {
+      clearInterval(interval);
+      state.running = false;
+      state.totalSecs = state.settings[state.mode] * 60;
+      state.remaining = state.totalSecs;
+      state.expectedEndTs = null;
+      saveState();
+      render();
+    }
+
+    function onComplete() {
+      if (state.soundOn) playAlarm();
+      notify();
+      if (state.mode === "pomodoro") {
+        state.session += 1;
+        const nextMode = state.session % 4 === 0 ? "long" : "short";
+        setMode(nextMode, true);
+      } else {
+        setMode("pomodoro", true);
+      }
+      showBadge("Sessao concluida");
+    }
+
+    function changeSetting(key, delta) {
+      const modeCfg = MODES[key];
+      const next = state.settings[key] + delta;
+      state.settings[key] = Math.max(modeCfg.min, Math.min(modeCfg.max, next));
+      if (key === state.mode) {
+        state.totalSecs = state.settings[key] * 60;
+        state.remaining = Math.min(state.remaining, state.totalSecs);
+        if (!state.running) state.remaining = state.totalSecs;
+      }
+      saveState();
+      render();
+    }
+
+    function getAudioCtx() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+
+    function playAlarm() {
+      try {
+        const ctx = getAudioCtx();
+        const seq = [[0, 660], [0.3, 880], [0.6, 1100]];
+        seq.forEach(([when, freq]) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = "sine";
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0, ctx.currentTime + when);
+          gain.gain.linearRampToValueAtTime(0.35, ctx.currentTime + when + 0.05);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + when + 0.6);
+          osc.start(ctx.currentTime + when);
+          osc.stop(ctx.currentTime + when + 0.7);
+        });
+      } catch (_) {}
+    }
+
+    async function requestNotif() {
+      if (!("Notification" in window)) return;
+      if (Notification.permission === "default") {
+        const perm = await Notification.requestPermission();
+        if (perm === "granted") showBadge("Notificacoes ativas");
+      }
+    }
+
+    function notify() {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      const msg = state.mode === "pomodoro" ? "Hora do foco!" : "Hora da pausa!";
+      new Notification("Pomodoro Timer", { body: msg, icon: "./icons/icon-192.png" });
+    }
+
+    function showBadge(text) {
+      notifBadge.textContent = text;
+      notifBadge.classList.add("show");
+      setTimeout(() => notifBadge.classList.remove("show"), 2400);
+    }
+
+    function bindUI() {
+      document.querySelectorAll(".tab").forEach(tab => {
+        tab.addEventListener("click", () => setMode(tab.dataset.mode, true));
+      });
+
+      document.querySelectorAll("[data-setting]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const key = btn.dataset.setting;
+          const delta = Number(btn.dataset.delta || 0);
+          changeSetting(key, delta);
+        });
+      });
+
+      mainBtn.addEventListener("click", async () => {
+        try { await getAudioCtx().resume(); } catch (_) {}
+        requestNotif();
+        toggleTimer();
+      });
+
+      resetBtn.addEventListener("click", resetTimer);
+      settingsBtn.addEventListener("click", () => settingsPanel.classList.toggle("open"));
+      soundToggle.addEventListener("click", () => {
+        state.soundOn = !state.soundOn;
+        saveState();
+        render();
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
+        if (e.code === "Space") {
+          e.preventDefault();
+          toggleTimer();
+        }
+        if (e.key.toLowerCase() === "r") resetTimer();
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          syncElapsedFromClock();
+          render();
+          saveState();
+        }
+      });
+    }
+
+    function initInstallPrompt() {
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        installRow.classList.add("visible");
+      });
+
+      installBtn.addEventListener("click", async () => {
+        if (!deferredInstallPrompt) return;
+        deferredInstallPrompt.prompt();
+        const result = await deferredInstallPrompt.userChoice;
+        if (result.outcome === "accepted") showBadge("App instalado");
+        deferredInstallPrompt = null;
+        installRow.classList.remove("visible");
+      });
+
+      window.addEventListener("appinstalled", () => {
+        showBadge("Instalacao concluida");
+        installRow.classList.remove("visible");
+      });
+    }
+
+    async function registerServiceWorker() {
+      if (!("serviceWorker" in navigator)) return;
+      try {
+        const reg = await navigator.serviceWorker.register("./sw.js");
+        reg.addEventListener("updatefound", () => showBadge("Atualizacao disponivel"));
+      } catch (_) {}
+    }
+
+    function initState() {
+      loadState();
+      if (!MODES[state.mode]) state.mode = "pomodoro";
+      for (const key of Object.keys(MODES)) {
+        const cfg = MODES[key];
+        const val = state.settings[key];
+        state.settings[key] = Math.max(cfg.min, Math.min(cfg.max, Number(val || cfg.default)));
+      }
+      state.totalSecs = state.settings[state.mode] * 60;
+      state.remaining = Math.max(0, Math.min(state.remaining || state.totalSecs, state.totalSecs));
+      syncElapsedFromClock();
+      if (state.running && state.remaining > 0) startInterval();
+    }
+
+    bindUI();
+    initInstallPrompt();
+    initState();
+    render();
+    registerServiceWorker();
+  </script>
+</body>
+</html>

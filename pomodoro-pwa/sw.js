@@ -1,86 +1,59 @@
-const STATIC_CACHE = "pomodoro-static-v2";
-const RUNTIME_CACHE = "pomodoro-runtime-v2";
-const APP_SHELL = ["./", "./index.html", "./manifest.json", "./icons/icon-192.png", "./icons/icon-512.png"];
+const CACHE = "pomodoro-v3";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./manifest.json",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+];
 
-self.addEventListener("install", event => {
-  event.waitUntil(caches.open(STATIC_CACHE).then(cache => cache.addAll(APP_SHELL)));
+// Install: cache all assets
+self.addEventListener("install", e => {
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll(ASSETS))
+  );
   self.skipWaiting();
 });
 
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys().then(keys => {
-      const deletions = keys
-        .filter(key => key !== STATIC_CACHE && key !== RUNTIME_CACHE)
-        .map(key => caches.delete(key));
-      return Promise.all(deletions);
-    })
+// Activate: delete old caches
+self.addEventListener("activate", e => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    )
   );
   self.clients.claim();
 });
 
-self.addEventListener("fetch", event => {
-  const { request } = event;
-  if (request.method !== "GET") return;
+// Fetch: cache-first for assets, network-first for fonts
+self.addEventListener("fetch", e => {
+  const url = new URL(e.request.url);
 
-  const reqUrl = new URL(request.url);
-  const isSameOrigin = reqUrl.origin === self.location.origin;
-  const isDocument = request.mode === "navigate";
-
-  if (isDocument) {
-    event.respondWith(networkFirst(request));
+  // Google Fonts — network first, cache fallback
+  if (url.hostname.includes("fonts")) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+          return res;
+        })
+        .catch(() => caches.match(e.request))
+    );
     return;
   }
 
-  if (isSameOrigin) {
-    event.respondWith(staleWhileRevalidate(request));
-    return;
-  }
-
-  event.respondWith(cacheFirst(request));
-});
-
-async function networkFirst(request) {
-  const cache = await caches.open(RUNTIME_CACHE);
-  try {
-    const response = await fetch(request);
-    cache.put(request, response.clone());
-    return response;
-  } catch (_) {
-    const cached = await cache.match(request);
-    return cached || caches.match("./index.html");
-  }
-}
-
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(RUNTIME_CACHE);
-  const cached = await cache.match(request);
-  const fetchPromise = fetch(request)
-    .then(response => {
-      cache.put(request, response.clone());
-      return response;
+  // Everything else — cache first
+  e.respondWith(
+    caches.match(e.request).then(cached => {
+      if (cached) return cached;
+      return fetch(e.request).then(res => {
+        if (res.ok && e.request.method === "GET") {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return res;
+      });
     })
-    .catch(() => null);
-
-  if (cached) {
-    fetchPromise.catch(() => null);
-    return cached;
-  }
-
-  const network = await fetchPromise;
-  return network || caches.match("./index.html");
-}
-
-async function cacheFirst(request) {
-  const cache = await caches.open(RUNTIME_CACHE);
-  const cached = await cache.match(request);
-  if (cached) return cached;
-
-  try {
-    const response = await fetch(request);
-    cache.put(request, response.clone());
-    return response;
-  } catch (_) {
-    return caches.match("./index.html");
-  }
-}
+  );
+});
